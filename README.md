@@ -6,6 +6,15 @@ It is designed to solve a very common issue on macOS where external monitors do 
 
 ---
 
+## System Requirements
+
+* **Operating System**: macOS 13.0 (Ventura) or newer.
+  * *On older OS versions:* The app declares `LSMinimumSystemVersion = 13.0` in its metadata. Running the app on macOS 12 (Monterey) or older will trigger a native macOS dialog stating that the app is incompatible and refuse to launch.
+  * *Why macOS 13+?* SoundShade leverages the modern `ServiceManagement` (`SMAppService`) APIs to manage "Start at login" without legacy helper daemons, alongside layout improvements introduced in SwiftUI for macOS 13.
+* **Hardware**: Optimized for Apple Silicon Macs (M1/M2/M3/M4). 
+
+---
+
 ## Key Features
 
 1. **🔆 Display Brightness Control**:
