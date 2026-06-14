@@ -1,3 +1,15 @@
+//
+//  BrightnessEngine.swift
+//  SoundShade
+//
+//  Created by Dizzy (minaby.com).
+//  Licensed under GNU GPLv3.
+//
+//  This file acts as a wrapper around the "m1ddc" command-line utility (https://github.com/jakehilborn/m1ddc)
+//  created by Jake Hilborn, which utilizes DDC/CI commands to adjust external screen brightness on Apple Silicon.
+//  The precompiled m1ddc executable is bundled within the application resources.
+//
+
 import Foundation
 import AppKit
 import CoreGraphics

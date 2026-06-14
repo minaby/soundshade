@@ -1,3 +1,15 @@
+//
+//  AudioEngine.swift
+//  SoundShade
+//
+//  Created by Dizzy (minaby.com).
+//  Licensed under GNU GPLv3.
+//
+//  This file includes integration with "ProxyAudioDevice" (https://github.com/dancharon/ProxyAudioDevice),
+//  a lightweight CoreAudio HAL audio plug-in template.
+//  The compiled HAL driver is bundled within the application resources.
+//
+
 import Foundation
 import CoreAudio
 import AudioToolbox
