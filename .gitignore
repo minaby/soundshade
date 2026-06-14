@@ -1,0 +1,12 @@
+# SwiftPM
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# macOS
+.DS_Store
+*.app
+
+# Scratch files
+scratch/test_proxy.swift
