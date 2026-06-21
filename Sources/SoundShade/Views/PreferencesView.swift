@@ -196,7 +196,7 @@ struct PreferencesView: View {
             HStack(alignment: .center) {
                 // Left
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("SoundShade 1.0")
+                    Text("SoundShade \(Bundle.main.appVersion)")
                         .font(.system(size: 11, weight: .semibold))
                     Text("by Dizzy")
                         .font(.system(size: 10))
@@ -280,5 +280,12 @@ struct PreferencesView: View {
         } message: {
             Text(alertMessage)
         }
+    }
+}
+
+extension Bundle {
+    /// User-facing version from Info.plist (CFBundleShortVersionString), e.g. "1.02".
+    var appVersion: String {
+        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 }
