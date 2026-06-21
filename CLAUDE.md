@@ -39,6 +39,12 @@ Current version: see Info.plist (last set to 1.01).
   the login item / audio-driver helper resolve `com.soundshade.app` to the wrong copy.
   Always run/install from `/Applications`. If a stray copy ever gets registered, remove
   it with `lsregister -u <path/to/SoundShade.app>`.
+- Xcode lives on the external volume (`/Volumes/Ext-Storage/Apps/Xcode.app`), so SwiftPM
+  bakes an `LC_RPATH` to its Swift toolchain into the binary. dyld probing that path at
+  launch triggers "removable volume" prompts. `build_app.sh` strips any non-system rpath
+  after copying the executable (keeps `/usr/lib/swift` and `@loader_path`). If you ever
+  build by other means, run `otool -l <binary> | grep -A2 LC_RPATH` and delete external
+  ones with `install_name_tool -delete_rpath <path> <binary>`.
 - The app bundles the `m1ddc` CLI (external-display DDC control) under
   `Contents/Resources/SoundShade_SoundShade.bundle/m1ddc`.
 

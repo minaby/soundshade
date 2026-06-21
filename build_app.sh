@@ -28,6 +28,18 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 # Copy executable
 cp "${BUILD_DIR}/${SCHEME}" "${APP_BUNDLE}/Contents/MacOS/${SCHEME}"
 
+# Strip any rpath that points outside the system (e.g. the Xcode toolchain on an
+# external volume). dyld probing such a path at launch triggers macOS "removable
+# volume" access prompts. The Swift runtime resolves from /usr/lib/swift anyway.
+EXEC="${APP_BUNDLE}/Contents/MacOS/${SCHEME}"
+otool -l "$EXEC" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | while read -r rp; do
+    case "$rp" in
+        /usr/lib/swift|@loader_path|@executable_path*) : ;;  # keep system rpaths
+        *) install_name_tool -delete_rpath "$rp" "$EXEC" 2>/dev/null \
+              && echo "  ✓ removed external rpath: $rp" ;;
+    esac
+done
+
 # Copy Info.plist
 cp "Sources/SoundShade/Resources/Info.plist" "${APP_BUNDLE}/Contents/Info.plist"
 
