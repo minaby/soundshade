@@ -10,3 +10,6 @@ Package.resolved
 
 # Scratch files
 scratch/test_proxy.swift
+
+# Local app build output (Spotlight-ignored)
+dist.noindex/

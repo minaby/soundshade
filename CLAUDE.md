@@ -32,7 +32,13 @@ Current version: see Info.plist (last set to 1.01).
 
 ## Build / package
 
-- `bash build_app.sh` builds release and assembles `SoundShade.app` in the repo root.
+- `bash build_app.sh` builds release and assembles the bundle in `dist.noindex/`.
+  The `.noindex` suffix keeps Spotlight/LaunchServices from auto-registering this
+  dev build. Do NOT output the bundle to the repo root: a registered `.app` copy on
+  the external volume makes macOS prompt for "removable volume" access and can make
+  the login item / audio-driver helper resolve `com.soundshade.app` to the wrong copy.
+  Always run/install from `/Applications`. If a stray copy ever gets registered, remove
+  it with `lsregister -u <path/to/SoundShade.app>`.
 - The app bundles the `m1ddc` CLI (external-display DDC control) under
   `Contents/Resources/SoundShade_SoundShade.bundle/m1ddc`.
 

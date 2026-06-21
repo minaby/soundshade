@@ -6,15 +6,20 @@ set -e
 SCHEME="SoundShade"
 BUILD_DIR=".build/release"
 APP_NAME="SoundShade"
-APP_BUNDLE="${APP_NAME}.app"
+# Output into a ".noindex" directory so Spotlight/LaunchServices never auto-register
+# this dev build. Registering a copy here (on an external volume) is what made macOS
+# prompt for "removable volume" access — the real app lives in /Applications.
+OUT_DIR="dist.noindex"
+APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
 
 echo "🔨 Building ${APP_NAME} (release)..."
 swift build -c release 2>&1
 
 echo "📦 Creating .app bundle..."
 
-# Clean old bundle
-rm -rf "${APP_BUNDLE}"
+# Clean old bundle / stray top-level copy from older builds
+rm -rf "${APP_BUNDLE}" "${APP_NAME}.app"
+mkdir -p "${OUT_DIR}"
 
 # Create bundle structure
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
@@ -41,6 +46,6 @@ chmod +x "${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/m1ddc" 2
 
 echo ""
 echo "✅ Done! Created: ${APP_BUNDLE}"
-echo "   Run with: open ${APP_BUNDLE}"
 echo ""
-echo "   To install: cp -R ${APP_BUNDLE} /Applications/"
+echo "   Install/run from /Applications (recommended — avoids external-volume prompts):"
+echo "   rm -rf /Applications/${APP_NAME}.app && cp -R ${APP_BUNDLE} /Applications/ && open /Applications/${APP_NAME}.app"
