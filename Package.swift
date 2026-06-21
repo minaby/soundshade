@@ -8,13 +8,11 @@ let package = Package(
         .executableTarget(
             name: "SoundShade",
             path: "Sources/SoundShade",
-            exclude: ["Resources/Info.plist", "Resources/AppIcon.svg", "Resources/AppIcon.png"],
+            exclude: ["Resources/Info.plist", "Resources/AppIcon.png"],
             resources: [
                 .copy("Resources/m1ddc"),
-                .copy("Resources/StatusIcon.png"),
                 .copy("Resources/StatusIcon.svg"),
                 .copy("Resources/ProxyAudioDevice.driver"),
-                .copy("Resources/AppLogo.svg"),
                 .copy("Resources/AppIcon.icns"),
                 .copy("Resources/InstallIcon.svg")
             ]
