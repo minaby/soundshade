@@ -19,13 +19,14 @@ struct PreferencesView: View {
                 HStack(alignment: .top, spacing: 40) {
                     // Left Column Top: Logo + Low-volume sensitivity
                     HStack(alignment: .top, spacing: 16) {
-                        if let url = Bundle.module.url(forResource: "AppLogo", withExtension: "svg"),
+                        if let url = Bundle.module.url(forResource: "StatusIcon", withExtension: "svg"),
                            let nsImage = NSImage(contentsOf: url) {
                             Image(nsImage: nsImage)
+                                .renderingMode(.template)   // tint with foreground => theme aware
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 72, height: 72)
-                                .clipShape(Circle())
+                                .foregroundStyle(.primary)
                         } else {
                             Image(systemName: "speaker.wave.3.bubble.left.fill")
                                 .resizable()
