@@ -2,8 +2,21 @@
 
 ## Versioning policy (IMPORTANT)
 
-Bump the app version on **every** change that ships (any code/resource change that
-gets committed). Do this as part of the same change — don't wait to be asked.
+Version bumping is **automated** by a git pre-commit hook (`.githooks/pre-commit`).
+Any commit that touches shipping files (`Sources/`, `Resources/`, `*.swift`,
+`Package.swift`, `build_app.sh`) auto-increments the version. Doc/meta-only commits
+(`*.md`, `.githooks/`, LICENSE, etc.) are skipped.
+
+One-time setup after cloning (the hook path is a local git setting, not committed):
+
+```
+git config core.hooksPath .githooks
+```
+
+To bypass for a specific commit (e.g. a release or merge commit):
+`SKIP_VERSION_BUMP=1 git commit ...`
+
+If editing the version manually instead, the rule is: bump it on every shipping change.
 
 - Version lives in `Sources/SoundShade/Resources/Info.plist`:
   - `CFBundleShortVersionString` — the user-facing version (e.g. `1.01`). Increment this.

@@ -1,0 +1,48 @@
+#!/bin/bash
+# Auto-bump SoundShade version on every commit that touches shipping code/resources.
+#
+# - CFBundleShortVersionString: 1.0.0 -> 1.01 -> 1.02 ... (two-digit patch)
+# - CFBundleVersion:            integer build number, +1 each bump
+#
+# Skips doc/meta-only commits (CLAUDE.md, README, LICENSE, *.md, .githooks, etc.)
+# so version churn only happens for real app changes.
+#
+# Set SKIP_VERSION_BUMP=1 to bypass (e.g. release/merge commits).
+
+set -e
+
+[ "$SKIP_VERSION_BUMP" = "1" ] && exit 0
+
+PLIST="Sources/SoundShade/Resources/Info.plist"
+PB="/usr/libexec/PlistBuddy"
+
+# Staged files in this commit.
+STAGED=$(git diff --cached --name-only)
+[ -z "$STAGED" ] && exit 0
+
+# Does this commit touch anything that ships in the app?
+SHIPPING=$(echo "$STAGED" | grep -E '^(Sources/|Resources/|.*\.swift$|Package\.swift|build_app\.sh)' || true)
+[ -z "$SHIPPING" ] && exit 0
+
+# If the only shipping change is the plist itself (e.g. a manual bump), don't double-bump.
+NON_PLIST=$(echo "$SHIPPING" | grep -v "^${PLIST}$" || true)
+[ -z "$NON_PLIST" ] && exit 0
+
+[ -f "$PLIST" ] || exit 0
+
+short=$("$PB" -c "Print CFBundleShortVersionString" "$PLIST")
+build=$("$PB" -c "Print CFBundleVersion" "$PLIST")
+
+major="${short%%.*}"
+patch="${short#*.}"
+# Strip any leading zeros for arithmetic, then re-pad to 2 digits.
+patch_num=$((10#$patch + 1))
+new_patch=$(printf "%02d" "$patch_num")
+new_short="${major}.${new_patch}"
+new_build=$((build + 1))
+
+"$PB" -c "Set :CFBundleShortVersionString $new_short" "$PLIST"
+"$PB" -c "Set :CFBundleVersion $new_build" "$PLIST"
+git add "$PLIST"
+
+echo "🔖 Version bumped: $short -> $new_short (build $build -> $new_build)"
