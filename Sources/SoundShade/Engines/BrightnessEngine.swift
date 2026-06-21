@@ -62,7 +62,7 @@ final class BrightnessEngine: ObservableObject {
         guard isAvailable, let display = selectedDisplay, !display.isBuiltIn else { return }
         brightness = max(0, min(1, value))
         let level = Int(brightness * Double(maxLuminance - minLuminance)) + minLuminance
-        runM1DDC(args: ["display", "\(display.m1ddcIndex)", "set", "luminance", "\(level)"])
+        runM1DDC(args: ["display", display.m1ddcSpecifier, "set", "luminance", "\(level)"])
     }
 
     var selectedDisplay: ConnectedDisplay? {
@@ -93,6 +93,7 @@ final class BrightnessEngine: ObservableObject {
                 isBuiltIn: isBuiltIn,
                 isSelected: (displayID == selectedDisplayID)
             )
+            display.uuid = ConnectedDisplay.systemUUID(for: displayID)
 
             if !isBuiltIn {
                 display.m1ddcIndex = externalIndex
@@ -137,7 +138,7 @@ final class BrightnessEngine: ObservableObject {
 
     private func fetchBrightness(for display: ConnectedDisplay) -> Double {
         guard !display.isBuiltIn else { return 0.5 }
-        guard let output = runM1DDC(args: ["display", "\(display.m1ddcIndex)", "get", "luminance"]),
+        guard let output = runM1DDC(args: ["display", display.m1ddcSpecifier, "get", "luminance"]),
               let value = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return 0.5
         }
