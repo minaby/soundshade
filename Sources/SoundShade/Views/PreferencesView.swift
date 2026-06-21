@@ -122,24 +122,41 @@ struct PreferencesView: View {
                                     .foregroundColor(.secondary)
                             } else {
                                 ForEach(audio.allOutputDevices) { device in
-                                    Toggle(device.name, isOn: Binding(
-                                        get: {
-                                            let uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs")
-                                            return uids == nil || uids!.contains(device.uid)
-                                        },
-                                        set: { enabled in
-                                            var uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs") ?? audio.allOutputDevices.map { $0.uid }
-                                            if enabled {
-                                                if !uids.contains(device.uid) { uids.append(device.uid) }
-                                            } else {
-                                                uids.removeAll { $0 == device.uid }
+                                    let isEnabled = {
+                                        let uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs")
+                                        return uids == nil || uids!.contains(device.uid)
+                                    }()
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Toggle(device.name, isOn: Binding(
+                                            get: { isEnabled },
+                                            set: { enabled in
+                                                var uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs") ?? audio.allOutputDevices.map { $0.uid }
+                                                if enabled {
+                                                    if !uids.contains(device.uid) { uids.append(device.uid) }
+                                                } else {
+                                                    uids.removeAll { $0 == device.uid }
+                                                }
+                                                UserDefaults.standard.set(uids, forKey: "enabledSoundDeviceUIDs")
+                                                audio.refresh()
                                             }
-                                            UserDefaults.standard.set(uids, forKey: "enabledSoundDeviceUIDs")
-                                            audio.refresh()
+                                        ))
+                                        .toggleStyle(.checkbox)
+                                        .font(.system(size: 13))
+
+                                        // External devices can opt out of the software-volume
+                                        // proxy and route directly (volume handled by hardware).
+                                        if isEnabled, !device.isBuiltIn, !device.isBluetooth, audio.isDriverInstalled {
+                                            Toggle("Bypass software volume", isOn: Binding(
+                                                get: { audio.isVolumeRoutingBypassed(device.uid) },
+                                                set: { audio.setVolumeRoutingBypassed($0, for: device.uid) }
+                                            ))
+                                            .toggleStyle(.checkbox)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 18)
+                                            .help("Route audio directly to this device instead of through SoundShade's software volume. Use when the device (e.g. powered speakers or an AVR) has its own volume control.")
                                         }
-                                    ))
-                                    .toggleStyle(.checkbox)
-                                    .font(.system(size: 13))
+                                    }
                                 }
                             }
                         }

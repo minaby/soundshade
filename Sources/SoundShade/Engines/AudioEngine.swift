@@ -118,18 +118,48 @@ final class AudioEngine: ObservableObject {
             guard setDefaultOutputDeviceID(device.id) else { return }
             _ = setDefaultSystemOutputDeviceID(device.id)
         } else {
-            // External screen: route via Proxy Audio Device if available
-            if let proxyID = getAllDeviceIDs().first(where: { getDeviceUID($0) == proxyDeviceUID }) {
+            // External screen: route via Proxy Audio Device for software volume,
+            // unless the user bypassed it for this device (e.g. they have speakers
+            // with their own volume control and want bit-perfect passthrough).
+            let proxyID = getAllDeviceIDs().first(where: { getDeviceUID($0) == proxyDeviceUID })
+            if !isVolumeRoutingBypassed(device.uid), let proxyID {
                 configureProxyDevice(targetUID: device.uid)
                 guard setDefaultOutputDeviceID(proxyID) else { return }
                 _ = setDefaultSystemOutputDeviceID(proxyID)
             } else {
-                // Fallback to direct routing if proxy is not installed
+                // Direct routing: proxy not installed, or bypassed by the user.
                 guard setDefaultOutputDeviceID(device.id) else { return }
                 _ = setDefaultSystemOutputDeviceID(device.id)
             }
         }
         refresh()
+    }
+
+    // MARK: - Per-device volume routing bypass
+
+    private let bypassedUIDsKey = "bypassedSoundDeviceUIDs"
+
+    /// Whether the user opted this device out of the software-volume proxy,
+    /// routing audio directly so volume is controlled by the hardware instead.
+    func isVolumeRoutingBypassed(_ uid: String) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: bypassedUIDsKey) ?? []).contains(uid)
+    }
+
+    func setVolumeRoutingBypassed(_ bypassed: Bool, for uid: String) {
+        var uids = UserDefaults.standard.stringArray(forKey: bypassedUIDsKey) ?? []
+        if bypassed {
+            if !uids.contains(uid) { uids.append(uid) }
+        } else {
+            uids.removeAll { $0 == uid }
+        }
+        UserDefaults.standard.set(uids, forKey: bypassedUIDsKey)
+
+        // Re-apply routing now if the changed device is the active one.
+        if let active = activeDevice, active.uid == uid {
+            setDefaultDevice(active)
+        } else {
+            objectWillChange.send()
+        }
     }
 
     func setVolume(_ value: Float) {
