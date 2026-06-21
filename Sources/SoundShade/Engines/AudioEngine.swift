@@ -38,7 +38,7 @@ final class AudioEngine: ObservableObject {
 
     init() {
         NSLog("SoundShade: App Main Bundle URL: \(Bundle.main.bundleURL)")
-        if let moduleURL = Bundle.module.url(forResource: "ProxyAudioDevice", withExtension: "driver") {
+        if let moduleURL = Bundle.appResources.url(forResource: "ProxyAudioDevice", withExtension: "driver") {
             NSLog("SoundShade: Found driver at: \(moduleURL.path)")
         } else {
             NSLog("SoundShade: Driver NOT found via Bundle.module")
@@ -116,14 +116,17 @@ final class AudioEngine: ObservableObject {
         if device.isBuiltIn || isBluetooth(device.id) {
             // Built-in speaker or Bluetooth: route directly
             guard setDefaultOutputDeviceID(device.id) else { return }
+            _ = setDefaultSystemOutputDeviceID(device.id)
         } else {
             // External screen: route via Proxy Audio Device if available
             if let proxyID = getAllDeviceIDs().first(where: { getDeviceUID($0) == proxyDeviceUID }) {
                 configureProxyDevice(targetUID: device.uid)
                 guard setDefaultOutputDeviceID(proxyID) else { return }
+                _ = setDefaultSystemOutputDeviceID(proxyID)
             } else {
                 // Fallback to direct routing if proxy is not installed
                 guard setDefaultOutputDeviceID(device.id) else { return }
+                _ = setDefaultSystemOutputDeviceID(device.id)
             }
         }
         refresh()
@@ -271,6 +274,20 @@ final class AudioEngine: ObservableObject {
     private func setDefaultOutputDeviceID(_ id: AudioObjectID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var device = id
+        let size = UInt32(MemoryLayout<AudioObjectID>.size)
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, size, &device
+        ) == noErr
+    }
+
+    @discardableResult
+    private func setDefaultSystemOutputDeviceID(_ id: AudioObjectID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
@@ -513,7 +530,7 @@ final class AudioEngine: ObservableObject {
     }
 
     func installDriver() async throws {
-        guard let driverURL = Bundle.module.url(forResource: "ProxyAudioDevice", withExtension: "driver") else {
+        guard let driverURL = Bundle.appResources.url(forResource: "ProxyAudioDevice", withExtension: "driver") else {
             throw NSError(domain: "SoundShade", code: 1, userInfo: [NSLocalizedDescriptionKey: "ProxyAudioDevice.driver template not found in bundle resources."])
         }
         

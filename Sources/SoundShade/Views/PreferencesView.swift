@@ -19,7 +19,7 @@ struct PreferencesView: View {
                 HStack(alignment: .top, spacing: 40) {
                     // Left Column Top: Logo + Low-volume sensitivity
                     HStack(alignment: .top, spacing: 16) {
-                        if let url = Bundle.module.url(forResource: "StatusIcon", withExtension: "svg"),
+                        if let url = Bundle.appResources.url(forResource: "StatusIcon", withExtension: "svg"),
                            let nsImage = NSImage(contentsOf: url) {
                             Image(nsImage: nsImage)
                                 .renderingMode(.template)   // tint with foreground => theme aware
@@ -239,7 +239,7 @@ struct PreferencesView: View {
                                     ProgressView()
                                         .controlSize(.small)
                                 } else {
-                                    if let url = Bundle.module.url(forResource: "InstallIcon", withExtension: "svg"),
+                                    if let url = Bundle.appResources.url(forResource: "InstallIcon", withExtension: "svg"),
                                        let nsImage = NSImage(contentsOf: url) {
                                         Image(nsImage: nsImage)
                                             .renderingMode(.template)

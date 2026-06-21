@@ -46,7 +46,11 @@ cp "Sources/SoundShade/Resources/Info.plist" "${APP_BUNDLE}/Contents/Info.plist"
 # Copy AppIcon.icns to Contents/Resources
 cp "Sources/SoundShade/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 
-# Copy resource bundle (contains m1ddc)
+# Copy resource bundle (contains m1ddc, SVGs, driver) into Contents/Resources
+# (standard, sealed location). The app loads it via Bundle.appResources, which
+# resolves from Contents/Resources — NOT via SwiftPM's Bundle.module, whose
+# generated accessor hardcodes an absolute build path on this external volume and
+# would make the shipped app reach for the removable drive at runtime.
 RESOURCE_BUNDLE=$(find .build -name "SoundShade_SoundShade.bundle" 2>/dev/null | head -1)
 if [ -n "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "${APP_BUNDLE}/Contents/Resources/"

@@ -30,7 +30,7 @@ final class BrightnessEngine: ObservableObject {
     private let maxLuminance: Int = 100
 
     private var m1ddcPath: String? {
-        Bundle.module.url(forResource: "m1ddc", withExtension: nil)?.path
+        Bundle.appResources.url(forResource: "m1ddc", withExtension: nil)?.path
             ?? Bundle.main.url(forResource: "m1ddc", withExtension: nil)?.path
     }
 

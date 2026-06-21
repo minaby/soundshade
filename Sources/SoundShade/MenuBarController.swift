@@ -26,7 +26,7 @@ final class MenuBarController {
 
         guard let button = statusItem?.button else { return }
         
-        if let url = Bundle.module.url(forResource: "StatusIcon", withExtension: "svg"),
+        if let url = Bundle.appResources.url(forResource: "StatusIcon", withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 18, height: 18)
             image.isTemplate = true   // template => auto black/white per menu bar appearance
