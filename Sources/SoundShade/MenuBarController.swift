@@ -21,11 +21,27 @@ final class MenuBarController {
 
     // MARK: - Setup
 
-    private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private func setupStatusItem(attempt: Int = 0) {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = item
 
-        guard let button = statusItem?.button else { return }
-        
+        // Persist the item's position across relaunches and keep it visible. Helps
+        // it survive login-time races and menu-bar reshuffles after reboot.
+        item.autosaveName = "com.soundshade.statusitem"
+        item.isVisible = true
+        item.behavior = []
+
+        guard let button = item.button else {
+            // The button can briefly be nil if we launch before the menu bar is
+            // ready (e.g. as a login item). Retry a few times instead of giving up.
+            if attempt < 10 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.setupStatusItem(attempt: attempt + 1)
+                }
+            }
+            return
+        }
+
         if let url = Bundle.appResources.url(forResource: "StatusIcon", withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 18, height: 18)
@@ -36,7 +52,7 @@ final class MenuBarController {
                                    accessibilityDescription: "SoundShade")
             button.image?.isTemplate = true
         }
-        
+
         button.action = #selector(togglePanel)
         button.target = self
     }
