@@ -27,6 +27,7 @@ struct PreferencesView: View {
                                 .scaledToFit()
                                 .frame(width: 72, height: 72)
                                 .foregroundStyle(.primary)
+                                .opacity(0.5)
                         } else {
                             Image(systemName: "speaker.wave.3.bubble.left.fill")
                                 .resizable()
@@ -214,9 +215,9 @@ struct PreferencesView: View {
             HStack(alignment: .center) {
                 // Left
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("SoundShade \(Bundle.main.appVersion)")
+                    Text("SoundShade")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("by Dizzy")
+                    Text("by Dizzy · v\(Bundle.main.appVersion)")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -302,7 +303,7 @@ struct PreferencesView: View {
 }
 
 extension Bundle {
-    /// User-facing version from Info.plist (CFBundleShortVersionString), e.g. "1.02".
+    /// User-facing version from Info.plist (CFBundleShortVersionString), format YYMMDD.HHmm e.g. "260628.1406".
     var appVersion: String {
         object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }

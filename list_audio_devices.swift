@@ -1,7 +1,7 @@
 import Foundation
 import CoreAudio
 
-// Lấy danh sách tất cả các ID của thiết bị âm thanh
+// Get the list of all audio device IDs
 func getAudioDevices() -> [AudioObjectID] {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
@@ -19,7 +19,7 @@ func getAudioDevices() -> [AudioObjectID] {
     )
     
     guard status == noErr else {
-        print("Lỗi khi lấy kích thước dữ liệu thiết bị: \(status)")
+        print("Error getting device data size: \(status)")
         return []
     }
     
@@ -36,14 +36,14 @@ func getAudioDevices() -> [AudioObjectID] {
     )
     
     guard status == noErr else {
-        print("Lỗi khi lấy danh sách ID thiết bị: \(status)")
+        print("Error getting device IDs list: \(status)")
         return []
     }
     
     return deviceIDs
 }
 
-// Lấy tên của thiết bị âm thanh
+// Get the name of the audio device
 func getDeviceName(deviceID: AudioObjectID) -> String {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyDeviceNameCFString,
@@ -67,10 +67,10 @@ func getDeviceName(deviceID: AudioObjectID) -> String {
         return name as String
     }
     
-    return "Thiết bị không xác định"
+    return "Unknown Device"
 }
 
-// Lấy mã UID duy nhất của thiết bị âm thanh
+// Get the unique UID of the audio device
 func getDeviceUID(deviceID: AudioObjectID) -> String {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyDeviceUID,
@@ -94,10 +94,10 @@ func getDeviceUID(deviceID: AudioObjectID) -> String {
         return uid as String
     }
     
-    return "Không có UID"
+    return "No UID"
 }
 
-// Kiểm tra xem thiết bị có kênh Output (đầu ra âm thanh) không
+// Check if the device has an output channel (audio output)
 func isOutputDevice(deviceID: AudioObjectID) -> Bool {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyStreams,
@@ -120,7 +120,7 @@ func isOutputDevice(deviceID: AudioObjectID) -> Bool {
     return false
 }
 
-// Lấy ID của thiết bị đầu ra mặc định hiện tại
+// Get the ID of the current default output device
 func getDefaultOutputDevice() -> AudioObjectID {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -146,22 +146,50 @@ func getDefaultOutputDevice() -> AudioObjectID {
     return 0
 }
 
-// CHƯƠNG TRÌNH CHÍNH
+// Get the ID of the current default system output device
+func getDefaultSystemOutputDevice() -> AudioObjectID {
+    var propertyAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    
+    var defaultDeviceID = AudioObjectID(0)
+    var dataSize = UInt32(MemoryLayout<AudioObjectID>.size)
+    
+    let status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &propertyAddress,
+        0,
+        nil,
+        &dataSize,
+        &defaultDeviceID
+    )
+    
+    if status == noErr {
+        return defaultDeviceID
+    }
+    return 0
+}
+
+// MAIN PROGRAM
 let devices = getAudioDevices()
 let defaultOut = getDefaultOutputDevice()
+let defaultSystemOut = getDefaultSystemOutputDevice()
 
 print("==================================================")
 print("              SOUNDSHADE AUDIO PORT TEST           ")
 print("==================================================")
-print("Thiết bị ra mặc định hiện tại (ID: \(defaultOut)): \(getDeviceName(deviceID: defaultOut))")
+print("Current default output device (ID: \(defaultOut)): \(getDeviceName(deviceID: defaultOut))")
+print("Default system sound device (ID: \(defaultSystemOut)): \(getDeviceName(deviceID: defaultSystemOut))")
 print("--------------------------------------------------")
-print("Danh sách các thiết bị Output khả dụng:")
+print("List of available output devices:")
 
 for device in devices {
     if isOutputDevice(deviceID: device) {
         let name = getDeviceName(deviceID: device)
         let uid = getDeviceUID(deviceID: device)
-        let isDefault = (device == defaultOut) ? " [Đang chọn]" : ""
+        let isDefault = (device == defaultOut) ? " [Selected]" : ""
         print("- \(name) (ID: \(device))\(isDefault)")
         print("  UID: \(uid)")
     }

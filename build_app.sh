@@ -15,6 +15,14 @@ APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
 echo "🔨 Building ${APP_NAME} (release)..."
 swift build -c release 2>&1
 
+# Stamp the version (YYMMDD.HHmm, 24h) with the actual build time, so every
+# build — not just git commits — carries an accurate timestamp.
+PLIST="Sources/SoundShade/Resources/Info.plist"
+NEW_VERSION=$(date +"%y%m%d.%H%M")
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NEW_VERSION}" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEW_VERSION}" "$PLIST"
+echo "🔖 Version stamped: ${NEW_VERSION}"
+
 echo "📦 Creating .app bundle..."
 
 # Clean old bundle / stray top-level copy from older builds

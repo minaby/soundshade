@@ -39,18 +39,33 @@ final class PreferencesWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     
     func show() {
+        // SoundShade is an accessory (.accessory activation policy) app — that
+        // policy makes NSApp.activate(ignoringOtherApps:) unreliable for
+        // bringing a window forward (the classic "works every other click"
+        // symptom). Temporarily switching to .regular while the window is open
+        // makes WindowServer treat us like a normal app for focus purposes,
+        // which is the standard fix menu-bar-only apps use for this.
+        NSApp.setActivationPolicy(.regular)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.presentWindow()
+        }
+    }
+
+    private func presentWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+
         if let window = window {
             window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             return
         }
-        
+
         let view = PreferencesView()
             .environmentObject(AudioEngine.shared)
             .environmentObject(BrightnessEngine.shared)
-        
+
         let controller = PreferencesHostingController(rootView: view)
-        
+
         let w = NSWindow(
             contentRect: NSRect(origin: .zero, size: controller.view.fittingSize),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -62,15 +77,15 @@ final class PreferencesWindowController: NSObject, NSWindowDelegate {
         w.contentViewController = controller
         w.center()
         w.isReleasedWhenClosed = false
-        
+
         self.window = w
-        
-        // Ensure it shows up on top of other apps
+
         w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
-    
+
     func windowWillClose(_ notification: Notification) {
         window = nil
+        // Revert to accessory (no Dock icon) now that the window is gone.
+        NSApp.setActivationPolicy(.accessory)
     }
 }

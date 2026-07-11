@@ -6,10 +6,15 @@ import ServiceManagement
 struct SoundShadePanel: View {
     @EnvironmentObject var audio: AudioEngine
     @EnvironmentObject var brightness: BrightnessEngine
+    @EnvironmentObject var displayMode: DisplayModeEngine
 
     @State private var showInstallAlert = false
     @State private var alertMessage = ""
     @State private var isInstalling = false
+
+    var onMultiMonitorRowFrame: ((CGRect) -> Void)? = nil
+    var onMultiMonitorHoverChange: ((Bool) -> Void)? = nil
+    var onDismissPanel: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -193,12 +198,26 @@ struct SoundShadePanel: View {
             }
 
             // ═══════════════════════════════════════════
+            // SECTION 3: MULTI-MONITOR CONTROL
+            // ═══════════════════════════════════════════
+            if displayMode.isAvailable {
+                Divider()
+
+                MultiMonitorRowView(
+                    currentModeLabel: displayMode.currentModeLabel,
+                    onHoverChange: { hovering in onMultiMonitorHoverChange?(hovering) },
+                    onFrameChange: { frame in onMultiMonitorRowFrame?(frame) }
+                )
+            }
+
+            // ═══════════════════════════════════════════
             // FOOTER
             // ═══════════════════════════════════════════
             Divider()
 
             VStack(spacing: 0) {
                 MenuFooterButton(label: "Preferences...", icon: "gearshape") {
+                    onDismissPanel?()
                     PreferencesWindowController.shared.show()
                 }
 
@@ -211,6 +230,7 @@ struct SoundShadePanel: View {
             .padding(.bottom, 8)
         }
         .frame(width: 290)
+        .coordinateSpace(name: "panelSpace")
         .alert("Driver Installation Failed", isPresented: $showInstallAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -249,16 +269,26 @@ struct MenuFooterButton: View {
     let icon: String
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
             Label(label, systemImage: icon)
                 .font(.system(size: 13))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .contentShape(Rectangle())
-        .foregroundStyle(.primary)
+        .foregroundStyle(isHovered ? Color.white : Color.primary)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isHovered ? Color.accentColor : Color.clear)
+        )
+        .padding(.horizontal, 4)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }

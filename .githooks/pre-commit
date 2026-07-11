@@ -1,8 +1,8 @@
 #!/bin/bash
 # Auto-bump SoundShade version on every commit that touches shipping code/resources.
 #
-# - CFBundleShortVersionString: 1.0.0 -> 1.01 -> 1.02 ... (two-digit patch)
-# - CFBundleVersion:            integer build number, +1 each bump
+# Version format: YYMMDD.HHmm (24h), stamped at commit time — e.g. 260628.1405.
+# Both CFBundleShortVersionString and CFBundleVersion are set to this same value.
 #
 # Skips doc/meta-only commits (CLAUDE.md, README, LICENSE, *.md, .githooks, etc.)
 # so version churn only happens for real app changes.
@@ -30,19 +30,11 @@ NON_PLIST=$(echo "$SHIPPING" | grep -v "^${PLIST}$" || true)
 
 [ -f "$PLIST" ] || exit 0
 
-short=$("$PB" -c "Print CFBundleShortVersionString" "$PLIST")
-build=$("$PB" -c "Print CFBundleVersion" "$PLIST")
+old_version=$("$PB" -c "Print CFBundleShortVersionString" "$PLIST")
+new_version=$(date +"%y%m%d.%H%M")
 
-major="${short%%.*}"
-patch="${short#*.}"
-# Strip any leading zeros for arithmetic, then re-pad to 2 digits.
-patch_num=$((10#$patch + 1))
-new_patch=$(printf "%02d" "$patch_num")
-new_short="${major}.${new_patch}"
-new_build=$((build + 1))
-
-"$PB" -c "Set :CFBundleShortVersionString $new_short" "$PLIST"
-"$PB" -c "Set :CFBundleVersion $new_build" "$PLIST"
+"$PB" -c "Set :CFBundleShortVersionString $new_version" "$PLIST"
+"$PB" -c "Set :CFBundleVersion $new_version" "$PLIST"
 git add "$PLIST"
 
-echo "🔖 Version bumped: $short -> $new_short (build $build -> $new_build)"
+echo "🔖 Version bumped: $old_version -> $new_version"

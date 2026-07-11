@@ -2,10 +2,15 @@
 
 ## Versioning policy (IMPORTANT)
 
-Version bumping is **automated** by a git pre-commit hook (`.githooks/pre-commit`).
-Any commit that touches shipping files (`Sources/`, `Resources/`, `*.swift`,
-`Package.swift`, `build_app.sh`) auto-increments the version. Doc/meta-only commits
-(`*.md`, `.githooks/`, LICENSE, etc.) are skipped.
+Version stamping is **automated in two places**, both writing the same
+`YYMMDD.HHmm` value at the time they run:
+- `build_app.sh` stamps it on every build (so the version always reflects the
+  actual build you're running, even without committing).
+- The git pre-commit hook (`.githooks/pre-commit`) also stamps it on any commit
+  that touches shipping files (`Sources/`, `Resources/`, `*.swift`,
+  `Package.swift`, `build_app.sh`), as a safety net for commits made without
+  running `build_app.sh` first. Doc/meta-only commits (`*.md`, `.githooks/`,
+  LICENSE, etc.) are skipped.
 
 One-time setup after cloning (the hook path is a local git setting, not committed):
 
@@ -19,16 +24,16 @@ To bypass for a specific commit (e.g. a release or merge commit):
 If editing the version manually instead, the rule is: bump it on every shipping change.
 
 - Version lives in `Sources/SoundShade/Resources/Info.plist`:
-  - `CFBundleShortVersionString` — the user-facing version (e.g. `1.01`). Increment this.
-  - `CFBundleVersion` — integer build number. Increment by 1 each time.
-- Numbering style the user uses: `1.0.0` → `1.01` → `1.02` → ... (two-digit patch).
-  Keep following that style unless told otherwise.
+  - `CFBundleShortVersionString` and `CFBundleVersion` — both set to the same value.
+- Format: `YYMMDD.HHmm`, stamped at build/commit time, **24h clock**. e.g. a commit
+  made June 28 2026 at 14:05 → `260628.1405`. Just write out whatever the actual
+  build time is — there is no separate incrementing counter anymore.
 - After bumping: rebuild the bundle with `bash build_app.sh`, then ad-hoc sign with
   `codesign --force --deep -s - SoundShade.app`.
-- When committing, also create an annotated git tag `vX.YZ` matching the new version
-  and push it (`git push origin vX.YZ`).
+- When committing, also create an annotated git tag `vYYMMDD.HHmm` matching the new
+  version and push it (`git push origin vYYMMDD.HHmm`).
 
-Current version: see Info.plist (last set to 1.01).
+Current version: see Info.plist.
 
 ## Build / package
 

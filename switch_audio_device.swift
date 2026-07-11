@@ -1,7 +1,7 @@
 import Foundation
 import CoreAudio
 
-// Lấy danh sách tất cả các ID của thiết bị âm thanh
+// Get the list of all audio device IDs
 func getAudioDevices() -> [AudioObjectID] {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
@@ -35,7 +35,7 @@ func getAudioDevices() -> [AudioObjectID] {
     return status == noErr ? deviceIDs : []
 }
 
-// Lấy tên của thiết bị âm thanh
+// Get the name of the audio device
 func getDeviceName(deviceID: AudioObjectID) -> String {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyDeviceNameCFString,
@@ -58,10 +58,10 @@ func getDeviceName(deviceID: AudioObjectID) -> String {
     if status == noErr, let name = deviceName?.takeRetainedValue() {
         return name as String
     }
-    return "Thiết bị không xác định"
+    return "Unknown Device"
 }
 
-// Kiểm tra xem thiết bị có phải đầu ra (Output) không
+// Check if the device is an output device
 func isOutputDevice(deviceID: AudioObjectID) -> Bool {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyStreams,
@@ -80,7 +80,7 @@ func isOutputDevice(deviceID: AudioObjectID) -> Bool {
     return status == noErr && dataSize > 0
 }
 
-// Lấy ID của thiết bị đầu ra mặc định hiện tại
+// Get the ID of the current default output device
 func getDefaultOutputDevice() -> AudioObjectID {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -102,7 +102,7 @@ func getDefaultOutputDevice() -> AudioObjectID {
     return status == noErr ? defaultDeviceID : 0
 }
 
-// Chuyển thiết bị đầu ra mặc định sang ID được chỉ định
+// Set the default output device to the specified ID
 func setDefaultOutputDevice(deviceID: AudioObjectID) -> Bool {
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -125,7 +125,30 @@ func setDefaultOutputDevice(deviceID: AudioObjectID) -> Bool {
     return status == noErr
 }
 
-// CHƯƠNG TRÌNH CHÍNH
+// Set the default system sound effects device to the specified ID
+func setDefaultSystemOutputDevice(deviceID: AudioObjectID) -> Bool {
+    var propertyAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    
+    var device = deviceID
+    let dataSize = UInt32(MemoryLayout<AudioObjectID>.size)
+    
+    let status = AudioObjectSetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &propertyAddress,
+        0,
+        nil,
+        dataSize,
+        &device
+    )
+    
+    return status == noErr
+}
+
+// MAIN PROGRAM
 let args = CommandLine.arguments
 
 if args.count < 2 {
@@ -133,44 +156,45 @@ if args.count < 2 {
     print("==================================================")
     print("      SOUNDSHADE OUTPUT DEVICE SWITCHER           ")
     print("==================================================")
-    print("Thiết bị mặc định hiện tại: \(getDeviceName(deviceID: defaultOut)) (ID: \(defaultOut))")
+    print("Current default device: \(getDeviceName(deviceID: defaultOut)) (ID: \(defaultOut))")
     print("--------------------------------------------------")
-    print("Hãy chạy lệnh kèm theo ID thiết bị muốn chuyển.")
-    print("Ví dụ: swift switch_audio_device.swift <ID>")
-    print("Danh sách ID khả dụng:")
+    print("Please run the command with the device ID you want to switch to.")
+    print("Example: swift switch_audio_device.swift <ID>")
+    print("Available device IDs:")
     
     let devices = getAudioDevices()
     for device in devices {
         if isOutputDevice(deviceID: device) {
             let name = getDeviceName(deviceID: device)
-            let isCurrent = (device == defaultOut) ? " [Đang chọn]" : ""
+            let isCurrent = (device == defaultOut) ? " [Selected]" : ""
             print("- ID: \(device) -> \(name)\(isCurrent)")
         }
     }
     print("==================================================")
 } else {
     guard let targetID = UInt32(args[1]) else {
-        print("Lỗi: ID thiết bị không hợp lệ (phải là số nguyên).")
+        print("Error: Invalid device ID (must be an integer).")
         exit(1)
     }
     
     let devices = getAudioDevices()
     guard devices.contains(targetID) && isOutputDevice(deviceID: targetID) else {
-        print("Lỗi: Không tìm thấy thiết bị output nào có ID là \(targetID).")
+        print("Error: No output device found with ID \(targetID).")
         exit(1)
     }
     
     let currentName = getDeviceName(deviceID: getDefaultOutputDevice())
     let targetName = getDeviceName(deviceID: targetID)
     
-    print("Đang chuyển đổi thiết bị phát âm thanh:")
-    print("Từ: \(currentName)")
-    print("Sang: \(targetName)")
+    print("Switching audio playback device:")
+    print("From: \(currentName)")
+    print("To: \(targetName)")
     
     let success = setDefaultOutputDevice(deviceID: targetID)
     if success {
-        print("🎉 THÀNH CÔNG! Đã chuyển sang: \(targetName)")
+        _ = setDefaultSystemOutputDevice(deviceID: targetID)
+        print("🎉 SUCCESS! Switched to: \(targetName)")
     } else {
-        print("❌ THẤT BẠI! Lỗi hệ thống khi chuyển thiết bị.")
+        print("❌ FAILED! System error switching device.")
     }
 }
