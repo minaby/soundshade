@@ -217,7 +217,7 @@ struct PreferencesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SoundShade")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("by Dizzy · v\(Bundle.main.appVersion)")
+                    Text("by Minaby · v\(Bundle.main.appVersion)")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
