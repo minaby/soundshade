@@ -98,9 +98,18 @@ final class DisplayModeEngine: ObservableObject {
             return
         }
 
-        mirroredDisplayUUIDs = mirroredDisplayUUIDs.filter { idByUUID[$0] != nil }
+        // Re-check actual live mirror status, not just "still online" — a
+        // display can stay connected while no longer being part of any
+        // mirror set (e.g. a config change made outside this process, or one
+        // of our own CG calls that didn't stick the way we expected). Without
+        // this, refresh() would keep asserting .single from stale bookkeeping
+        // forever, showing "Mirrored" in the UI long after reality moved on.
+        mirroredDisplayUUIDs = mirroredDisplayUUIDs.filter {
+            guard let id = idByUUID[$0] else { return false }
+            return CGDisplayIsInMirrorSet(id) != 0
+        }
 
-        guard !mirroredDisplayUUIDs.isEmpty else {
+        guard !mirroredDisplayUUIDs.isEmpty, CGDisplayIsInMirrorSet(liveTargetID) != 0 else {
             resetToExtendedState()
             displays = allDisplays
             return
@@ -141,13 +150,31 @@ final class DisplayModeEngine: ObservableObject {
         let targetID = CGMainDisplayID()
         mode = .single(targetID)
         collapsedTargetUUID = ConnectedDisplay.systemUUID(for: targetID)
-        mirroredDisplayUUIDs = Set(
-            mirroredOnlineIDs.filter { $0 != targetID }.compactMap { ConnectedDisplay.systemUUID(for: $0) }
-        )
-        // originalOriginsByUUID intentionally left empty: this process never
-        // observed the pre-mirror arrangement, so switchToExtended() has
-        // nothing to restore — it'll just un-mirror and leave whatever
-        // origins CoreGraphics already has.
+        let mirroredIDs = mirroredOnlineIDs.filter { $0 != targetID }
+        mirroredDisplayUUIDs = Set(mirroredIDs.compactMap { ConnectedDisplay.systemUUID(for: $0) })
+
+        // This process never observed the pre-mirror arrangement, so we have
+        // no real "original" origins to restore. But leaving
+        // originalOriginsByUUID empty is worse than a guess: while mirrored,
+        // every member of the mirror set reports the SAME CGDisplayBounds as
+        // the target (that's just how CoreGraphics represents an active
+        // mirror), so switchToExtended() would un-mirror but then restore
+        // nothing — leaving every display at that same shared origin,
+        // i.e. still fully overlapping. That reads to the user as still
+        // mirrored (or a blank/phantom display) even though the mirror flag
+        // itself is off. Instead, lay the target at (0,0) and place each
+        // mirrored display immediately to its right, using the target's
+        // current (mirrored) width as the offset — not perfect, but a
+        // non-overlapping, usable arrangement instead of a stacked one.
+        let targetBounds = CGDisplayBounds(targetID)
+        var nextX = targetBounds.origin.x + targetBounds.width
+        var origins: [String: CGPoint] = [:]
+        for id in mirroredIDs {
+            guard let uuid = ConnectedDisplay.systemUUID(for: id) else { continue }
+            origins[uuid] = CGPoint(x: nextX, y: targetBounds.origin.y)
+            nextX += CGDisplayBounds(id).width
+        }
+        originalOriginsByUUID = origins
     }
 
     private func resetToExtendedState() {

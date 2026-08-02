@@ -23,6 +23,15 @@ final class BrightnessEngine: ObservableObject {
     @Published var displays: [ConnectedDisplay] = []
     @Published var allDisplays: [ConnectedDisplay] = []
     @Published var selectedDisplayID: CGDirectDisplayID = 0
+
+    // Source of truth for *which* display is selected. CGDirectDisplayID can
+    // be reassigned by a reconfiguration event (e.g. moving a monitor's cable
+    // to a different port) even though the same physical display stays
+    // connected — see ConnectedDisplay.uuid / DisplayModeEngine for the same
+    // issue. Without this, enumerateDisplays() would find selectedDisplayID
+    // no longer matches anything and silently reselect "first external
+    // display" instead of resolving the user's actual selection to its new ID.
+    private var selectedDisplayUUID: String?
     @Published var brightness: Double = 0.5
     @Published var isAvailable: Bool = false
 
@@ -54,6 +63,7 @@ final class BrightnessEngine: ObservableObject {
 
     func selectDisplay(_ display: ConnectedDisplay) {
         selectedDisplayID = display.id
+        selectedDisplayUUID = display.uuid
         displays = displays.map {
             var d = $0
             d.isSelected = (d.id == display.id)
@@ -144,6 +154,15 @@ final class BrightnessEngine: ObservableObject {
 
         displays = newDisplays.filter { !hasSavedEnabled || actualEnabledNames.contains($0.name) }
 
+        // If the selected display's ID was reassigned (e.g. its cable moved to
+        // a different port) but it's still connected, its UUID will still be
+        // present under a new ID — resolve to that before treating the
+        // selection as gone.
+        if selectedDisplayID != 0, !displays.contains(where: { $0.id == selectedDisplayID }),
+           let uuid = selectedDisplayUUID, let stillPresent = displays.first(where: { $0.uuid == uuid }) {
+            selectedDisplayID = stillPresent.id
+        }
+
         // Auto-select first external display if no selection or selection gone
         if selectedDisplayID == 0 || !displays.contains(where: { $0.id == selectedDisplayID }) {
             if let ext = displays.first(where: { !$0.isBuiltIn }) {
@@ -152,6 +171,7 @@ final class BrightnessEngine: ObservableObject {
                 selectedDisplayID = first.id
             }
         }
+        selectedDisplayUUID = displays.first(where: { $0.id == selectedDisplayID })?.uuid
 
         // Keep selection sync'd in both lists
         displays = displays.map {
