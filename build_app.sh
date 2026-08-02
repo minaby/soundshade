@@ -1,7 +1,29 @@
 #!/bin/bash
 # build_app.sh — Build SoundShade.app bundle from Swift Package
+#
+# Flags:
+#   --sign       Sign with the Developer ID Application cert in Keychain
+#                (falls back to ad-hoc if none found). Signs nested binaries
+#                (m1ddc, ProxyAudioDevice.driver) with hardened runtime +
+#                timestamp BEFORE the outer bundle — required order for
+#                notarization; `codesign --deep` alone does not reliably
+#                reach a bare CLI binary or a driver .bundle sitting inside
+#                a plain resource bundle.
+#   --notarize   Implies --sign. Submits to Apple's notary service via
+#                notarytool using the keychain profile in $NOTARY_PROFILE
+#                (default: gau-notary — same Developer ID/team, reused
+#                across projects) and staples the ticket on success.
 
-set -e
+SIGN=0
+NOTARIZE=0
+NOTARY_PROFILE="${NOTARY_PROFILE:-gau-notary}"
+DEVELOPER_ID_APPLICATION="Developer ID Application: Chau Hoang Hieu Lam (73CVFDQ653)"
+for arg in "$@"; do
+    case "$arg" in
+        --sign) SIGN=1 ;;
+        --notarize) SIGN=1; NOTARIZE=1 ;;
+    esac
+done
 
 SCHEME="SoundShade"
 BUILD_DIR=".build/release"
@@ -67,6 +89,54 @@ fi
 
 # Make m1ddc executable
 chmod +x "${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/m1ddc" 2>/dev/null || true
+
+if [ "$SIGN" -eq 1 ]; then
+    IDENTITY="-"  # ad-hoc fallback
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "$DEVELOPER_ID_APPLICATION"; then
+        IDENTITY="$DEVELOPER_ID_APPLICATION"
+        echo "🔏 Signing with Developer ID (${IDENTITY})..."
+    else
+        echo "⚠️  No Developer ID Application cert found — falling back to ad-hoc signing."
+        echo "    (Ad-hoc builds cannot be notarized.)"
+    fi
+
+    SIGN_OPTS=(--force --options runtime --timestamp -s "$IDENTITY")
+    # Sign nested binaries first (inside-out) — notarization requires every
+    # Mach-O in the bundle to individually carry hardened runtime + a secure
+    # timestamp, and `codesign --deep` on the outer bundle alone does not
+    # reliably reach these two (a bare CLI binary and a driver .bundle, both
+    # sitting inside a plain resource bundle rather than a standard
+    # Frameworks/PlugIns location codesign auto-discovers).
+    M1DDC="${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/m1ddc"
+    DRIVER="${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/ProxyAudioDevice.driver"
+    [ -f "$M1DDC" ] && codesign "${SIGN_OPTS[@]}" "$M1DDC"
+    [ -d "$DRIVER" ] && codesign "${SIGN_OPTS[@]}" "$DRIVER"
+    codesign "${SIGN_OPTS[@]}" "${APP_BUNDLE}"
+
+    codesign --verify --deep --strict "${APP_BUNDLE}"
+    echo "  ✓ Signed and verified"
+fi
+
+if [ "$NOTARIZE" -eq 1 ]; then
+    if [ "$IDENTITY" = "-" ]; then
+        echo "❌ Cannot notarize an ad-hoc-signed build — need a Developer ID cert." >&2
+        exit 1
+    fi
+    echo "📤 Submitting for notarization (profile: ${NOTARY_PROFILE})..."
+    ZIP_PATH=$(mktemp -t SoundShade-notarize).zip
+    ditto -c -k --keepParent "${APP_BUNDLE}" "$ZIP_PATH"
+    if xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait; then
+        xcrun stapler staple "${APP_BUNDLE}"
+        spctl -a -vvv -t install "${APP_BUNDLE}"
+        echo "  ✓ Notarized and stapled"
+    else
+        echo "❌ Notarization failed. If the profile is missing, create it with:" >&2
+        echo "    xcrun notarytool store-credentials \"${NOTARY_PROFILE}\" --apple-id ... --team-id 73CVFDQ653 --password ..." >&2
+        rm -f "$ZIP_PATH"
+        exit 1
+    fi
+    rm -f "$ZIP_PATH"
+fi
 
 echo ""
 echo "✅ Done! Created: ${APP_BUNDLE}"
