@@ -124,20 +124,20 @@ struct PreferencesView: View {
                             } else {
                                 ForEach(audio.allOutputDevices) { device in
                                     let isEnabled = {
-                                        let uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs")
-                                        return uids == nil || uids!.contains(device.uid)
+                                        let disabledUIDs = UserDefaults.standard.stringArray(forKey: "disabledSoundDeviceUIDs") ?? []
+                                        return !disabledUIDs.contains(device.uid)
                                     }()
                                     VStack(alignment: .leading, spacing: 2) {
                                         Toggle(device.name, isOn: Binding(
                                             get: { isEnabled },
                                             set: { enabled in
-                                                var uids = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs") ?? audio.allOutputDevices.map { $0.uid }
+                                                var uids = UserDefaults.standard.stringArray(forKey: "disabledSoundDeviceUIDs") ?? []
                                                 if enabled {
-                                                    if !uids.contains(device.uid) { uids.append(device.uid) }
-                                                } else {
                                                     uids.removeAll { $0 == device.uid }
+                                                } else {
+                                                    if !uids.contains(device.uid) { uids.append(device.uid) }
                                                 }
-                                                UserDefaults.standard.set(uids, forKey: "enabledSoundDeviceUIDs")
+                                                UserDefaults.standard.set(uids, forKey: "disabledSoundDeviceUIDs")
                                                 audio.refresh()
                                             }
                                         ))

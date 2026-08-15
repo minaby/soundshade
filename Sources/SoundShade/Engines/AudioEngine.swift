@@ -74,11 +74,11 @@ final class AudioEngine: ObservableObject {
         
         allOutputDevices = allOutput
         
-        let enabledUIDs = UserDefaults.standard.stringArray(forKey: "enabledSoundDeviceUIDs")
-        let hasSavedEnabled = enabledUIDs != nil
-        let actualEnabledUIDs = enabledUIDs ?? []
-        
-        outputDevices = allOutput.filter { !hasSavedEnabled || actualEnabledUIDs.contains($0.uid) }
+        // New devices are shown by default; the user opts OUT specific ones
+        // (disabledSoundDeviceUIDs), so newly connected/paired devices (e.g.
+        // a new Bluetooth headset) appear in the panel without any setup.
+        let disabledUIDs = UserDefaults.standard.stringArray(forKey: "disabledSoundDeviceUIDs") ?? []
+        outputDevices = allOutput.filter { !disabledUIDs.contains($0.uid) }
         
         if realDefaultDeviceID == proxyID, let proxy = proxyID {
             // If the proxy is active, the actual active device is the proxy's target
