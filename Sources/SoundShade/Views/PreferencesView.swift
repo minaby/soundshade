@@ -181,22 +181,15 @@ struct PreferencesView: View {
                                 ForEach(brightness.allDisplays) { display in
                                     Toggle(display.name, isOn: Binding(
                                         get: {
-                                            let names = UserDefaults.standard.stringArray(forKey: "enabledDisplayNames")
-                                            return names == nil || names!.contains(display.name)
+                                            brightness.isDisplayEnabled(display)
                                         },
                                         set: { enabled in
-                                            var names = UserDefaults.standard.stringArray(forKey: "enabledDisplayNames") ?? brightness.allDisplays.map { $0.name }
-                                            if enabled {
-                                                if !names.contains(display.name) { names.append(display.name) }
-                                            } else {
-                                                names.removeAll { $0 == display.name }
-                                            }
-                                            UserDefaults.standard.set(names, forKey: "enabledDisplayNames")
-                                            brightness.refresh()
+                                            brightness.setDisplayEnabled(enabled, for: display)
                                         }
                                     ))
                                     .toggleStyle(.checkbox)
                                     .font(.system(size: 13))
+                                    .disabled(display.uuid == nil)
                                 }
                             }
                         }

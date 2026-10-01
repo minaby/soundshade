@@ -123,7 +123,11 @@ final class AudioEngine: ObservableObject {
             // with their own volume control and want bit-perfect passthrough).
             let proxyID = getAllDeviceIDs().first(where: { getDeviceUID($0) == proxyDeviceUID })
             if !isVolumeRoutingBypassed(device.uid), let proxyID {
-                configureProxyDevice(targetUID: device.uid)
+                guard configureProxyDevice(targetUID: device.uid) else {
+                    NSLog("SoundShade: Failed to configure proxy target: %@", device.uid)
+                    refresh()
+                    return
+                }
                 guard setDefaultOutputDeviceID(proxyID) else { return }
                 _ = setDefaultSystemOutputDeviceID(proxyID)
             } else {
@@ -181,8 +185,12 @@ final class AudioEngine: ObservableObject {
     }
 
     func setMuted(_ muted: Bool) {
-        setDeviceMuted(muted, for: defaultDeviceID)
-        isMuted = muted
+        guard setDeviceMuted(muted, for: defaultDeviceID) else {
+            NSLog("SoundShade: Failed to set mute on device %u", defaultDeviceID)
+            refresh()
+            return
+        }
+        isMuted = getMuted(for: defaultDeviceID)
     }
 
     var activeDevice: AudioDevice? {
@@ -375,16 +383,19 @@ final class AudioEngine: ObservableObject {
         return muted != 0
     }
 
-    private func setDeviceMuted(_ muted: Bool, for id: AudioObjectID) {
+    private func setDeviceMuted(_ muted: Bool, for id: AudioObjectID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
             mScope: kAudioDevicePropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectHasProperty(id, &address) else { return }
+        guard AudioObjectHasProperty(id, &address) else { return false }
+        var writable: DarwinBoolean = false
+        guard AudioObjectIsPropertySettable(id, &address, &writable) == noErr,
+              writable.boolValue else { return false }
         var value: UInt32 = muted ? 1 : 0
         let size = UInt32(MemoryLayout<UInt32>.size)
-        AudioObjectSetPropertyData(id, &address, 0, nil, size, &value)
+        return AudioObjectSetPropertyData(id, &address, 0, nil, size, &value) == noErr
     }
 
     // MARK: - System Output Volume (software attenuation fallback)
@@ -535,15 +546,15 @@ final class AudioEngine: ObservableObject {
         return n as String
     }
     
-    func configureProxyDevice(targetUID: String) {
+    func configureProxyDevice(targetUID: String) -> Bool {
         let boxID = getBoxID(for: proxyBoxUID)
-        guard boxID != 0 else { return }
+        guard boxID != 0 else { return false }
         
         // Identify ourselves as the configurator
-        _ = setIdentifyValue(boxID: boxID, value: getpid())
+        guard setIdentifyValue(boxID: boxID, value: getpid()) else { return false }
         
         // Set target output device
-        _ = setBoxObjectName(boxID: boxID, name: "outputDevice=\(targetUID)")
+        return setBoxObjectName(boxID: boxID, name: "outputDevice=\(targetUID)")
     }
     
     func getProxyTargetUID() -> String? {

@@ -148,11 +148,8 @@ final class BrightnessEngine: ObservableObject {
 
         allDisplays = newDisplays
 
-        let enabledNames = UserDefaults.standard.stringArray(forKey: "enabledDisplayNames")
-        let hasSavedEnabled = enabledNames != nil
-        let actualEnabledNames = enabledNames ?? []
-
-        displays = newDisplays.filter { !hasSavedEnabled || actualEnabledNames.contains($0.name) }
+        migrateDisplayVisibility(for: newDisplays)
+        displays = newDisplays.filter { isDisplayEnabled($0) }
 
         // If the selected display's ID was reassigned (e.g. its cable moved to
         // a different port) but it's still connected, its UUID will still be
@@ -185,6 +182,37 @@ final class BrightnessEngine: ObservableObject {
             d.isSelected = (d.id == selectedDisplayID)
             return d
         }
+    }
+
+    // MARK: - Display visibility
+
+    private let disabledDisplayUUIDsKey = "disabledDisplayUUIDs"
+
+    func isDisplayEnabled(_ display: ConnectedDisplay) -> Bool {
+        guard let uuid = display.uuid else { return true }
+        return !(UserDefaults.standard.stringArray(forKey: disabledDisplayUUIDsKey) ?? []).contains(uuid)
+    }
+
+    func setDisplayEnabled(_ enabled: Bool, for display: ConnectedDisplay) {
+        guard let uuid = display.uuid else { return }
+        var disabled = UserDefaults.standard.stringArray(forKey: disabledDisplayUUIDsKey) ?? []
+        disabled.removeAll { $0 == uuid }
+        if !enabled { disabled.append(uuid) }
+        UserDefaults.standard.set(disabled, forKey: disabledDisplayUUIDsKey)
+        refresh()
+    }
+
+    private func migrateDisplayVisibility(for connected: [ConnectedDisplay]) {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: disabledDisplayUUIDsKey) == nil,
+              !connected.isEmpty else { return }
+        let enabledNames = defaults.stringArray(forKey: "enabledDisplayNames")
+        let disabled = connected.compactMap { display -> String? in
+            guard let enabledNames, !enabledNames.contains(display.name) else { return nil }
+            return display.uuid
+        }
+        defaults.set(disabled, forKey: disabledDisplayUUIDsKey)
+        defaults.removeObject(forKey: "enabledDisplayNames")
     }
 
     // MARK: - m1ddc Helpers

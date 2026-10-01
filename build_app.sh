@@ -14,6 +14,9 @@
 #                (default: gau-notary — same Developer ID/team, reused
 #                across projects) and staples the ticket on success.
 
+set -euo pipefail
+cd "$(dirname "$0")"
+
 SIGN=0
 NOTARIZE=0
 NOTARY_PROFILE="${NOTARY_PROFILE:-gau-notary}"
@@ -36,6 +39,10 @@ APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
 
 echo "🔨 Building ${APP_NAME} (release)..."
 swift build -c release 2>&1
+BUILD_DIR=$(swift build -c release --show-bin-path)
+RESOURCE_BUNDLE="${BUILD_DIR}/SoundShade_SoundShade.bundle"
+test -x "${BUILD_DIR}/${SCHEME}"
+test -d "$RESOURCE_BUNDLE"
 
 # Stamp the version (YYMMDD.HHmm, 24h) with the actual build time, so every
 # build — not just git commits — carries an accurate timestamp.
@@ -65,8 +72,8 @@ EXEC="${APP_BUNDLE}/Contents/MacOS/${SCHEME}"
 otool -l "$EXEC" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | while read -r rp; do
     case "$rp" in
         /usr/lib/swift|@loader_path|@executable_path*) : ;;  # keep system rpaths
-        *) install_name_tool -delete_rpath "$rp" "$EXEC" 2>/dev/null \
-              && echo "  ✓ removed external rpath: $rp" ;;
+        *) install_name_tool -delete_rpath "$rp" "$EXEC"
+           echo "  ✓ removed external rpath: $rp" ;;
     esac
 done
 
@@ -81,14 +88,11 @@ cp "Sources/SoundShade/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources
 # resolves from Contents/Resources — NOT via SwiftPM's Bundle.module, whose
 # generated accessor hardcodes an absolute build path on this external volume and
 # would make the shipped app reach for the removable drive at runtime.
-RESOURCE_BUNDLE=$(find .build -name "SoundShade_SoundShade.bundle" 2>/dev/null | head -1)
-if [ -n "$RESOURCE_BUNDLE" ]; then
-    cp -R "$RESOURCE_BUNDLE" "${APP_BUNDLE}/Contents/Resources/"
-    echo "  ✓ Bundled resources: $(basename $RESOURCE_BUNDLE)"
-fi
+cp -R "$RESOURCE_BUNDLE" "${APP_BUNDLE}/Contents/Resources/"
+echo "  ✓ Bundled resources: $(basename "$RESOURCE_BUNDLE")"
 
 # Make m1ddc executable
-chmod +x "${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/m1ddc" 2>/dev/null || true
+chmod +x "${APP_BUNDLE}/Contents/Resources/SoundShade_SoundShade.bundle/m1ddc"
 
 if [ "$SIGN" -eq 1 ]; then
     IDENTITY="-"  # ad-hoc fallback

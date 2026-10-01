@@ -353,8 +353,13 @@ final class MenuBarController {
         let rowTopFromContentTop = multiMonitorRowFrame.minY
         let rowTopScreenY = mainFrame.maxY - rowTopFromContentTop
 
-        let x = mainFrame.maxX - 2  // slight overlap, like a native submenu
-        let y = rowTopScreenY - fittingSize.height
+        let screenFrame = mainPanel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? mainFrame
+        let rightX = mainFrame.maxX - 2
+        let preferredX = rightX + fittingSize.width <= screenFrame.maxX - 4
+            ? rightX : mainFrame.minX - fittingSize.width + 2
+        let x = max(screenFrame.minX + 4, min(preferredX, screenFrame.maxX - fittingSize.width - 4))
+        let y = max(screenFrame.minY + 4,
+                    min(rowTopScreenY - fittingSize.height, screenFrame.maxY - fittingSize.height - 4))
 
         p.setFrame(NSRect(x: x, y: y, width: fittingSize.width, height: fittingSize.height), display: true)
     }
