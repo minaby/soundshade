@@ -91,6 +91,19 @@ final class BrightnessEngine: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
     }
 
+    /// Last known brightness for `display` (live value if it's the selected one,
+    /// else the cached value from the last time we set it, else 0.5).
+    func knownBrightness(for display: ConnectedDisplay) -> Double {
+        if display.id == selectedDisplay?.id { return brightness }
+        return cachedBrightness(for: display) ?? 0.5
+    }
+
+    /// Sets brightness on a specific display, selecting it first if needed.
+    func setBrightness(_ value: Double, for display: ConnectedDisplay) {
+        if selectedDisplay?.id != display.id { selectDisplay(display) }
+        setBrightness(value)
+    }
+
     // Shows a cached value immediately (synchronous, no hardware round-trip);
     // only reaches for the device over DDC in the background if we've never
     // seen a value for it before, so the UI never blocks on a stalled display.
@@ -149,7 +162,11 @@ final class BrightnessEngine: ObservableObject {
         allDisplays = newDisplays
 
         migrateDisplayVisibility(for: newDisplays)
-        displays = newDisplays.filter { isDisplayEnabled($0) }
+        // The panel no longer lets users hide individual displays (every external
+        // display gets its own brightness slider), so a stale disabled-UUID list
+        // must not make a display unreachable. isDisplayEnabled/setDisplayEnabled
+        // are kept for the stored preference but no longer filter here.
+        displays = newDisplays
 
         // If the selected display's ID was reassigned (e.g. its cable moved to
         // a different port) but it's still connected, its UUID will still be

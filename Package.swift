@@ -14,7 +14,8 @@ let package = Package(
                 .copy("Resources/StatusIcon.svg"),
                 .copy("Resources/ProxyAudioDevice.driver"),
                 .copy("Resources/AppIcon.icns"),
-                .copy("Resources/InstallIcon.svg")
+                .copy("Resources/InstallIcon.svg"),
+                .copy("Resources/Icons")
             ]
         )
     ]

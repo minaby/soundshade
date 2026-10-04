@@ -24,7 +24,7 @@ import CoreGraphics
 final class DisplayModeEngine: ObservableObject {
     static let shared = DisplayModeEngine()
 
-    enum Mode: Equatable {
+    enum Mode: Equatable, Hashable {
         case extended
         case single(CGDirectDisplayID)
     }

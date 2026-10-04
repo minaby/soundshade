@@ -21,6 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("SoundShade Debug: applicationShouldTerminateAfterLastWindowClosed called")
         return false
     }
+
+    @MainActor
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        NSLog("SoundShade Debug: applicationShouldHandleReopen called (hasVisibleWindows: \(flag))")
+        menuBarController?.showPanel()
+        return true
+    }
 }
 
 // MARK: - Entry Point

@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 
 // MARK: - Menu Bar Controller
-// Uses NSPanel + NSVisualEffectView instead of NSPopover to avoid the
-// popover arrow overlapping the status bar icon.
+// Uses a borderless NSPanel instead of NSPopover: the design is a rounded,
+// arrow-less card, and the panel lets us anchor the top edge under the icon
+// while the height changes between tabs.
 
 @MainActor
 final class MenuBarController {
@@ -16,15 +17,24 @@ final class MenuBarController {
     private let brightness = BrightnessEngine.shared
     private let displayMode = DisplayModeEngine.shared
 
-    // MARK: - Multi-monitor flyout state
-
-    private var flyoutPanel: NSPanel?
-    private var multiMonitorRowFrame: CGRect = .zero
-    private var isRowHovered = false
-    private var isFlyoutHovered = false
-    private var pendingFlyoutHide: DispatchWorkItem?
+    /// True while a task (e.g. driver install, which shows a system auth dialog)
+    /// needs the panel to stay open even though focus moved elsewhere.
+    private var isBusy = false
+    private let panelLayout = PanelLayout()
+    /// Last content size reported by the SwiftUI view. SwiftUI only reports
+    /// *changes*, so this is the source of truth when re-opening the panel.
+    private var lastContentSize: CGSize = .zero
 
     private var screenChangeRecreateWorkItem: DispatchWorkItem?
+    private var pendingSetupRetry: DispatchWorkItem?
+    /// Bumped on every teardown so a retry scheduled by a previous setup pass
+    /// can tell it has been superseded and bail out instead of adding a
+    /// second status item.
+    private var setupGeneration = 0
+
+    /// A single cable swap or mirror change emits didChangeScreenParameters
+    /// several times; wait for the burst to settle before rebuilding.
+    private static let screenChangeDebounce: TimeInterval = 1.0
 
     init() {
         setupStatusItem()
@@ -52,22 +62,32 @@ final class MenuBarController {
             self?.recreateStatusItem()
         }
         screenChangeRecreateWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.screenChangeDebounce, execute: workItem)
     }
 
     private func recreateStatusItem() {
+        teardownStatusItem()
+        setupStatusItem()
+    }
+
+    private func teardownStatusItem() {
+        // Invalidate any retry still in flight, otherwise it fires after the
+        // rebuild and registers a second, orphaned item.
+        pendingSetupRetry?.cancel()
+        pendingSetupRetry = nil
+        setupGeneration &+= 1
+
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
         }
         statusItem = nil
-        setupStatusItem()
     }
 
     // MARK: - Setup
 
     private func setupStatusItem(attempt: Int = 0) {
+        let generation = setupGeneration
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem = item
 
         // Persist the item's position across relaunches and keep it visible. Helps
         // it survive login-time races and menu-bar reshuffles after reboot.
@@ -77,14 +97,24 @@ final class MenuBarController {
 
         guard let button = item.button else {
             // The button can briefly be nil if we launch before the menu bar is
-            // ready (e.g. as a login item). Retry a few times instead of giving up.
-            if attempt < 10 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    self?.setupStatusItem(attempt: attempt + 1)
-                }
+            // ready (e.g. as a login item). Hand this item back before retrying:
+            // an item left registered without a button keeps its menu bar slot for
+            // the lifetime of the process, and repeated screen changes would stack
+            // up invisible items until the bar runs out of room.
+            NSStatusBar.system.removeStatusItem(item)
+            guard attempt < 10 else { return }
+            let retry = DispatchWorkItem { [weak self] in
+                guard let self, self.setupGeneration == generation else { return }
+                self.pendingSetupRetry = nil
+                self.setupStatusItem(attempt: attempt + 1)
             }
+            pendingSetupRetry = retry
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: retry)
             return
         }
+
+        // Only publish the item once it is known-good.
+        statusItem = item
 
         if let url = Bundle.appResources.url(forResource: "StatusIcon", withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
@@ -97,71 +127,100 @@ final class MenuBarController {
             button.image?.isTemplate = true
         }
 
-        button.action = #selector(togglePanel)
+        button.action = #selector(statusItemClicked)
         button.target = self
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
     // MARK: - Panel
 
     private func makePanel() -> NSPanel {
         let panelView = SoundShadePanel(
-            onMultiMonitorRowFrame: { [weak self] frame in
-                self?.multiMonitorRowFrame = frame
-                if self?.isRowHovered == true {
-                    self?.positionFlyout()
-                }
-            },
-            onMultiMonitorHoverChange: { [weak self] hovering in
-                self?.handleRowHoverChange(hovering)
-            },
-            onDismissPanel: { [weak self] in
-                self?.hidePanel()
+            onBusyChange: { [weak self] busy in
+                self?.isBusy = busy
             }
         )
             .environmentObject(audio)
             .environmentObject(brightness)
             .environmentObject(displayMode)
+            .environmentObject(panelLayout)
 
-        let hosting = NSHostingView(rootView: panelView)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
+        let hosting = SizingHostingView(rootView: AnyView(panelView))
+        hosting.sizingOptions = [.intrinsicContentSize]
+        hosting.autoresizingMask = [.width, .height]
+        hosting.onSizeChange = { [weak self] size in self?.resizePanel(to: size) }
 
-        // Visual effect background — same material as system menus
-        let effectView = NSVisualEffectView()
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.material = .popover
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 10
-        effectView.layer?.masksToBounds = true
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        hosting.frame = container.bounds
+        container.addSubview(hosting)
 
-        effectView.addSubview(hosting)
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
-        ])
-
-        let p = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 290, height: 100),
+        let p = KeyablePanel(
+            contentRect: container.frame,
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
             backing: .buffered,
             defer: false
         )
-        p.contentView = effectView
+        p.contentView = container
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = true
         p.level = .popUpMenu
         p.collectionBehavior = [.transient, .ignoresCycle, .moveToActiveSpace]
         p.animationBehavior = .utilityWindow
+        p.onCancel = { [weak self] in self?.hidePanel() }
 
         return p
     }
 
+    /// Keeps the top edge (just under the menu bar icon) fixed and grows/shrinks downward.
+    private func resizePanel(to size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        lastContentSize = size
+        guard let p = panel else { return }
+        let old = p.frame
+        guard abs(old.height - size.height) > 0.5 || abs(old.width - size.width) > 0.5 else { return }
+        let frame = NSRect(x: old.minX, y: old.maxY - size.height, width: size.width, height: size.height)
+        p.setFrame(frame, display: true)
+    }
+
     // MARK: - Toggle
 
-    @objc private func togglePanel() {
+    @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showContextMenu()
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func showContextMenu() {
+        hidePanel()
+        guard let item = statusItem else { return }
+        let menu = NSMenu()
+        let refresh = NSMenuItem(title: "Refresh Devices", action: #selector(refreshDevices), keyEquivalent: "")
+        refresh.target = self
+        menu.addItem(refresh)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit SoundShade", action: #selector(quitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        // Attach only for this click so left-click keeps opening the panel.
+        item.menu = menu
+        item.button?.performClick(nil)
+        item.menu = nil
+    }
+
+    @objc private func refreshDevices() {
+        audio.refresh()
+        brightness.refresh()
+        displayMode.refresh(with: brightness.allDisplays)
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
+    }
+
+    private func togglePanel() {
         if let p = panel, p.isVisible {
             hidePanel()
         } else {
@@ -169,11 +228,17 @@ final class MenuBarController {
         }
     }
 
-    private func showPanel() {
+    /// Opens the panel under the menu bar icon (also used when the app is re-launched).
+    func showPanel() {
         if panel == nil { panel = makePanel() }
         guard let p = panel,
               let button = statusItem?.button,
               let buttonWindow = button.window else { return }
+
+        // Never let the panel run past the bottom of the screen the icon is on.
+        let iconScreen = NSScreen.screen(containing: buttonWindow.convertToScreen(button.convert(button.bounds, to: nil)).origin)?.visibleFrame
+            ?? buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        panelLayout.maxHeight = max(300, buttonWindow.convertToScreen(button.convert(button.bounds, to: nil)).minY - iconScreen.minY - 8)
 
         // Refresh data on open
         audio.refresh()
@@ -182,9 +247,10 @@ final class MenuBarController {
 
         // Size the panel to fit content
         p.contentView?.layoutSubtreeIfNeeded()
-        let fittingSize = p.contentView?.fittingSize ?? NSSize(width: 290, height: 400)
-        let panelWidth = max(290, fittingSize.width)
-        let panelHeight = max(100, fittingSize.height)
+        let fitting = p.contentView?.subviews.first?.fittingSize
+        if let f = fitting, f.height > 0 { lastContentSize = f }
+        let panelWidth: CGFloat = 400
+        let panelHeight = lastContentSize.height > 0 ? lastContentSize.height : max(100, fitting?.height ?? p.frame.height)
 
         // Position: flush below the menu bar, horizontally centered on icon
         let buttonRect = button.convert(button.bounds, to: nil)
@@ -206,11 +272,14 @@ final class MenuBarController {
                    display: false)
         p.makeKeyAndOrderFront(nil)
 
-        // Dismiss on click outside
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            self?.hidePanel()
+        // Dismiss on click outside (global monitors only see events for other apps).
+        if eventMonitor == nil {
+            eventMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.leftMouseDown, .rightMouseDown]
+            ) { [weak self] _ in
+                guard let self, !self.isBusy else { return }
+                self.hidePanel()
+            }
         }
     }
 
@@ -220,155 +289,34 @@ final class MenuBarController {
             NSEvent.removeMonitor(m)
             eventMonitor = nil
         }
-        hideFlyout()
     }
+}
 
-    // MARK: - Multi-monitor Flyout
+/// Borderless panels can't become key by default; being key lets hover tooltips
+/// work and Esc close the panel, without activating the app (.nonactivatingPanel).
+private final class KeyablePanel: NSPanel {
+    var onCancel: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+}
 
-    private func handleRowHoverChange(_ hovering: Bool) {
-        isRowHovered = hovering
-        if hovering {
-            pendingFlyoutHide?.cancel()
-            showFlyout()
-        } else {
-            scheduleFlyoutHideCheck()
-        }
-    }
+/// Reports the SwiftUI content's ideal size every time it changes (tab switch,
+/// list growing/shrinking) so the panel can follow it.
+private final class SizingHostingView: NSHostingView<AnyView> {
+    var onSizeChange: ((CGSize) -> Void)?
+    private var lastReported: CGSize = .zero
 
-    private func handleFlyoutHoverChange(_ hovering: Bool) {
-        isFlyoutHovered = hovering
-        if hovering {
-            pendingFlyoutHide?.cancel()
-        } else {
-            scheduleFlyoutHideCheck()
-        }
-    }
-
-    private func scheduleFlyoutHideCheck() {
-        pendingFlyoutHide?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            if !self.isRowHovered && !self.isFlyoutHovered {
-                self.hideFlyout()
-            }
-        }
-        pendingFlyoutHide = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
-    }
-
-    private func makeFlyoutPanel() -> NSPanel {
-        let flyoutView = MultiMonitorFlyoutView(
-            displays: displayMode.displays,
-            mode: displayMode.mode,
-            onSelect: { [weak self] mode in
-                self?.displayMode.selectMode(mode)
-                self?.hideFlyout()
-                self?.hidePanel()
-            },
-            onHoverChange: { [weak self] hovering in
-                self?.handleFlyoutHoverChange(hovering)
-            }
-        )
-
-        let hosting = NSHostingView(rootView: flyoutView)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-
-        let effectView = NSVisualEffectView()
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.material = .popover
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 10
-        effectView.layer?.masksToBounds = true
-
-        effectView.addSubview(hosting)
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
-        ])
-
-        let p = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 240, height: 100),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
-            backing: .buffered,
-            defer: false
-        )
-        p.contentView = effectView
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true
-        p.level = .popUpMenu
-        p.collectionBehavior = [.transient, .ignoresCycle, .moveToActiveSpace]
-        p.animationBehavior = .utilityWindow
-
-        return p
-    }
-
-    private func showFlyout() {
-        if flyoutPanel == nil { flyoutPanel = makeFlyoutPanel() }
-        else { rebuildFlyoutContent() }
-        positionFlyout()
-        flyoutPanel?.orderFront(nil)
-    }
-
-    private func rebuildFlyoutContent() {
-        // Re-create content so the option list reflects the latest displays/mode
-        // (e.g. after a selection) without tearing down the panel itself.
-        guard let p = flyoutPanel else { return }
-        let flyoutView = MultiMonitorFlyoutView(
-            displays: displayMode.displays,
-            mode: displayMode.mode,
-            onSelect: { [weak self] mode in
-                self?.displayMode.selectMode(mode)
-                self?.hideFlyout()
-                self?.hidePanel()
-            },
-            onHoverChange: { [weak self] hovering in
-                self?.handleFlyoutHoverChange(hovering)
-            }
-        )
-        let hosting = NSHostingView(rootView: flyoutView)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        guard let effectView = p.contentView else { return }
-        effectView.subviews.forEach { $0.removeFromSuperview() }
-        effectView.addSubview(hosting)
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
-        ])
-    }
-
-    private func positionFlyout() {
-        guard let p = flyoutPanel, let mainPanel = panel, multiMonitorRowFrame != .zero else { return }
-
-        p.contentView?.layoutSubtreeIfNeeded()
-        let fittingSize = p.contentView?.fittingSize ?? NSSize(width: 240, height: 80)
-
-        let mainFrame = mainPanel.frame  // screen coords, AppKit y-up
-        // multiMonitorRowFrame is in SwiftUI's panelSpace: y-down, origin at top of content.
-        let rowTopFromContentTop = multiMonitorRowFrame.minY
-        let rowTopScreenY = mainFrame.maxY - rowTopFromContentTop
-
-        let screenFrame = mainPanel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? mainFrame
-        let rightX = mainFrame.maxX - 2
-        let preferredX = rightX + fittingSize.width <= screenFrame.maxX - 4
-            ? rightX : mainFrame.minX - fittingSize.width + 2
-        let x = max(screenFrame.minX + 4, min(preferredX, screenFrame.maxX - fittingSize.width - 4))
-        let y = max(screenFrame.minY + 4,
-                    min(rowTopScreenY - fittingSize.height, screenFrame.maxY - fittingSize.height - 4))
-
-        p.setFrame(NSRect(x: x, y: y, width: fittingSize.width, height: fittingSize.height), display: true)
-    }
-
-    private func hideFlyout() {
-        pendingFlyoutHide?.cancel()
-        isRowHovered = false
-        isFlyoutHovered = false
-        flyoutPanel?.orderOut(nil)
+    // NSHostingView doesn't reliably call invalidateIntrinsicContentSize() when the
+    // SwiftUI content changes size, but it does re-run layout(), so check there.
+    override func layout() {
+        super.layout()
+        let size = fittingSize
+        guard size.width > 0, size.height > 0, size != lastReported else { return }
+        lastReported = size
+        // Resize the window synchronously, in the same layout pass that changed the
+        // content. Deferring it a runloop turn shows one frame of new content in
+        // the old-size window (the visible "jump" when switching tabs).
+        onSizeChange?(size)
     }
 }
 
