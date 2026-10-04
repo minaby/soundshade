@@ -59,6 +59,7 @@ final class BrightnessEngine: ObservableObject {
         if isAvailable, let current = selectedDisplay {
             applyKnownOrFetchBrightness(for: current)
         }
+        if isAvailable { syncBrightnessFromHardware() }
     }
 
     func selectDisplay(_ display: ConnectedDisplay) {
@@ -75,6 +76,7 @@ final class BrightnessEngine: ObservableObject {
     func setBrightness(_ value: Double) {
         guard isAvailable, let display = selectedDisplay, !display.isBuiltIn else { return }
         brightness = max(0, min(1, value))
+        lastLocalSetAt = Date()
         setCachedBrightness(brightness, for: display)
 
         // The actual DDC write is debounced and dispatched off-thread: a display
@@ -89,6 +91,45 @@ final class BrightnessEngine: ObservableObject {
         }
         pendingBrightnessWrite = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
+    }
+
+    /// Bumped when a hardware read updates the cache so views re-read `knownBrightness`.
+    @Published private(set) var brightnessRevision = 0
+    private var lastLocalSetAt = Date.distantPast
+
+    /// Reads the real brightness of every external display and updates the cache, so
+    /// sliders match the monitors even if they were changed with the monitor's own
+    /// buttons or never adjusted from SoundShade. A reading of 0 is ignored: some
+    /// firmware reports 0 regardless of actual brightness (see note below), so for
+    /// those the value we last set ourselves stays authoritative.
+    func syncBrightnessFromHardware() {
+        for display in displays where !display.isBuiltIn {
+            Task {
+                guard let level = await fetchHardwareBrightness(for: display), level > 0 else { return }
+                // Don't fight the user's slider drag.
+                guard Date().timeIntervalSince(lastLocalSetAt) > 2 else { return }
+                setCachedBrightness(level, for: display)
+                if selectedDisplay?.id == display.id { brightness = level }
+                brightnessRevision += 1
+            }
+        }
+    }
+
+    /// Reads luminance over DDC until two consecutive reads agree. The first read after
+    /// idle/wake is sometimes bogus (seen as 0 or 100 on an LG UltraFine) while the next
+    /// ones are right, so a single read can't be trusted.
+    private func fetchHardwareBrightness(for display: ConnectedDisplay) async -> Double? {
+        var previous: Double?
+        for _ in 0..<4 {
+            if let output = await runM1DDC(args: ["display", display.m1ddcSpecifier, "get", "luminance"]),
+               let value = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                let level = min(1, max(0, Double(value - minLuminance) / Double(maxLuminance - minLuminance)))
+                if let previous, previous == level { return level }
+                previous = level
+            }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        return previous
     }
 
     /// Last known brightness for `display` (live value if it's the selected one,
@@ -257,13 +298,10 @@ final class BrightnessEngine: ObservableObject {
     private func fetchBrightness(for display: ConnectedDisplay) async -> Double {
         guard !display.isBuiltIn else { return 0.5 }
         if let cached = cachedBrightness(for: display) { return cached }
-        guard let output = await runM1DDC(args: ["display", display.m1ddcSpecifier, "get", "luminance"]),
-              let value = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return 0.5
-        }
-        let fetched = Double(value - minLuminance) / Double(maxLuminance - minLuminance)
-        setCachedBrightness(fetched, for: display)
-        return fetched
+        // 0 is what bogus firmware reports, so don't treat it (or a failed read) as real.
+        guard let level = await fetchHardwareBrightness(for: display), level > 0 else { return 0.5 }
+        setCachedBrightness(level, for: display)
+        return level
     }
 
     // Runs m1ddc off the main thread with a hard timeout. DDC/I2C calls can
